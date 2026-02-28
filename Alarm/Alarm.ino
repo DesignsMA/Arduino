@@ -1,34 +1,56 @@
+#define enA 12 // Pin de control de velocidad (PWM)
+#define in1 11 // Pin de control de dirección 1
+#define in2 10 // Pin de control de dirección 2
+
+//---------------BOCINA-------------------
 #include <avr/pgmspace.h>
 
-extern const int horn1_length;
-extern const signed char horn1_data[] PROGMEM;
+extern const int horn1_length; // Longitud de la muestra de audio
+extern const signed char horn1_data[] PROGMEM; // Muestra de audio almacenada en PROGMEM (memoria flash)
+//----------------------------------------
 
-const int speakerPin = 9;
-const int sampleRate = 8000; // Frecuencia de muestreo en Hz
+int estado = 0;   // 0 = espera, 1 = rampa
+int pwmValor = 0; // Variable para almacenar el valor PWM
+unsigned long tiempoInicio = 0; // Variable para almacenar el tiempo de inicio
+unsigned long intervalo = 1000000; // 1 segundo en microsegundos
 
 void setup() {
-  pinMode(speakerPin, OUTPUT);
+  pinMode(enA, OUTPUT);
+  pinMode(in1, OUTPUT);
+  pinMode(in2, OUTPUT);
 
-  // Configura Timer1 para reproducir audio a 8-bit Fast PWM
-  TCCR1A = _BV(COM1A1) | _BV(WGM10);
-  TCCR1B = _BV(WGM12) | _BV(CS10);  // Sin prescaler (máxima velocidad)
-  OCR1A = 128; // Nivel medio (silencio)
+  // Rotar el motor en una dirección
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, HIGH);
 }
 
 void loop() {
-  unsigned long startMicros = micros();
-  unsigned long samplePeriod = 1000000UL / sampleRate; // microsegundos por muestra
+  unsigned long ahora = micros();
+  switch (estado) {
+// Estado 0: esperar 1 segundo
+    case 0:
+      if (ahora - tiempoInicio >= intervalo) {
+        tiempoInicio = ahora;
+        estado = 1;
+        pwmValor = 0;
+      }
+      break;
 
-  for (int i = 0; i < horn1_length; i++) {
-    unsigned char sample = pgm_read_byte(&horn1_data[i]); // Leer desde PROGMEM
-    OCR1A = sample; // Actualizar PWM
+    // Estado 1: subir PWM de 0 a 255 en 1 segundo
+    case 1:
+      if (ahora - tiempoInicio <= intervalo) {
 
-    // Esperar hasta que haya pasado el tiempo exacto
-    while (micros() - startMicros < samplePeriod) {
-      // no hacer nada
+        // Calculamos progreso (0.0 a 1.0)
+        float progreso = (float)(ahora - tiempoInicio) / intervalo;
+        pwmValor = progreso * 255;
+
+        analogWrite(enA, pwmValor);
+
+      } else {
+        analogWrite(enA, 0); // apagar
+        estado = 0;               // volver a empezar
+        tiempoInicio = ahora;
+      }
+      break;
     }
-    startMicros += samplePeriod; // siguiente marca de tiempo
-  }
-
-  delay(3000); // Esperar antes de repetir el sonido
 }
