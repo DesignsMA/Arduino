@@ -1,6 +1,6 @@
-#define enA 12 // Pin de control de velocidad (PWM)
-#define in1 11 // Pin de control de dirección 1
-#define in2 10 // Pin de control de dirección 2
+#define enA 11 // Pin de control de velocidad (PWM)
+#define in1 13 // Pin de control de dirección 1
+#define in2 12 // Pin de control de dirección 2
 
 //---------------BOCINA-------------------
 #include <avr/pgmspace.h>
@@ -12,7 +12,7 @@ const int sampleRate = 8000; // Frecuencia de muestreo en Hz
 #define speakerPin 9 // Pin de salida para el altavoz (PWM)
 
 volatile int sampleIndex = 0;
-int repeticiones = 3;      // cuántas veces quieres reproducir
+int repeticiones = 4;      // cuántas veces quieres reproducir
 int conteoReps = 0;
 
 unsigned long ultimoSample = 0;
@@ -28,6 +28,7 @@ void setup() {
   pinMode(enA, OUTPUT);
   pinMode(in1, OUTPUT);
   pinMode(in2, OUTPUT);
+  pinMode(speakerPin, OUTPUT);
 
   // Rotar el motor en una dirección
   digitalWrite(in1, LOW);
