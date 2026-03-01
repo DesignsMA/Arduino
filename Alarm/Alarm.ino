@@ -4,9 +4,19 @@
 
 //---------------BOCINA-------------------
 #include <avr/pgmspace.h>
+#include "rustalarm.h" // Archivo generado por wav2c, contiene la muestra de audio en formato C
 
-extern const int horn1_length; // Longitud de la muestra de audio
-extern const signed char horn1_data[] PROGMEM; // Muestra de audio almacenada en PROGMEM (memoria flash)
+extern const int sounddata_length; // Longitud de la muestra de audio
+extern const signed char sounddata_data[] PROGMEM; // Muestra de audio almacenada en PROGMEM (memoria flash)
+const int sampleRate = 8000; // Frecuencia de muestreo en Hz
+#define speakerPin 9 // Pin de salida para el altavoz (PWM)
+
+volatile int sampleIndex = 0;
+int repeticiones = 3;      // cuántas veces quieres reproducir
+int conteoReps = 0;
+
+unsigned long ultimoSample = 0;
+unsigned long samplePeriod = 1000000UL / sampleRate; // microsegundos por muestra (duracion de sonido)
 //----------------------------------------
 
 int estado = 0;   // 0 = espera, 1 = rampa
@@ -22,35 +32,61 @@ void setup() {
   // Rotar el motor en una dirección
   digitalWrite(in1, LOW);
   digitalWrite(in2, HIGH);
+
+  // Configura Timer1 para reproducir audio a 8-bit Fast PWM
+  TCCR1A = _BV(COM1A1) | _BV(WGM10);
+  TCCR1B = _BV(WGM12) | _BV(CS10);  // Sin prescaler (máxima velocidad)
+  OCR1A = 128; // Nivel medio (silencio)
 }
 
 void loop() {
+
   unsigned long ahora = micros();
+
   switch (estado) {
-// Estado 0: esperar 1 segundo
+
     case 0:
+      // Espera 1 segundo antes de iniciar
       if (ahora - tiempoInicio >= intervalo) {
         tiempoInicio = ahora;
         estado = 1;
-        pwmValor = 0;
+        sampleIndex = 0;
+        conteoReps = 0;
       }
       break;
 
-    // Estado 1: subir PWM de 0 a 255 en 1 segundo
     case 1:
-      if (ahora - tiempoInicio <= intervalo) {
 
-        // Calculamos progreso (0.0 a 1.0)
-        float progreso = (float)(ahora - tiempoInicio) / intervalo;
-        pwmValor = progreso * 255;
+      // Motor a velocidad fija 50
+      analogWrite(enA, 50);
 
-        analogWrite(enA, pwmValor);
+      // Control de muestreo a 8000 Hz
+      if (ahora - ultimoSample >= samplePeriod) {
 
-      } else {
-        analogWrite(enA, 0); // apagar
-        estado = 0;               // volver a empezar
-        tiempoInicio = ahora;
+        ultimoSample += samplePeriod;
+
+        // Leer muestra desde PROGMEM
+        int8_t sample = pgm_read_byte(&sounddata_data[sampleIndex]);
+
+        OCR1A = sample;  // enviar al PWM (pin 9)
+
+        sampleIndex++;
+
+        // Si terminó la muestra
+        if (sampleIndex >= sounddata_length) {
+          sampleIndex = 0;
+          conteoReps++;
+
+          if (conteoReps >= repeticiones) {
+            // Apagar todo
+            OCR1A = 128;       // silencio
+            analogWrite(enA, 0);
+            estado = 0;
+            tiempoInicio = ahora;
+          }
+        }
       }
+
       break;
-    }
+  }
 }
