@@ -1,12 +1,13 @@
-#define enA 11 // Pin de control de velocidad (PWM)
-#define in1 13 // Pin de control de dirección 1
-#define in2 12 // Pin de control de dirección 2
+#define in1 12 // Pin de control de dirección 1
+#define in2 11 // Pin de control de dirección 2
+#define enA 3 // Pin de control de velocidad (PWM)
+
 // --------- Salidas para operadores AND ------
-#define logic1 2 
-#define logic2 3
-#define logic3 4
+#define logic1 A0 
+#define logic2 A1
+#define logic3 A2
 // --------- Entradas para operadores AND ------
-#define input 5
+#define input 2
 
 
 //---------------BOCINA-------------------
@@ -25,6 +26,7 @@ unsigned long samplePeriod = 1000000UL / sampleRate; // microsegundos por muestr
 //----------------------------------------
 
 int estado = 0;   // 0 = espera, 1 = rampa
+volatile bool motorActivo = false;
 volatile bool flag = false;
 int pwmValor = 0; // Variable para almacenar el valor PWM
 unsigned long tiempoInicio = 0; // Variable para almacenar el tiempo de inicio
@@ -44,9 +46,13 @@ void setup() {
   // Configura la entrada para operadores AND
   pinMode(input, INPUT);
 
-  // Rotar el motor en una dirección
+  // Inicializa el motor apagado
   digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
+  digitalWrite(in2, LOW);
+  TCCR2A = 0;
+  TCCR2B = 0;
+  digitalWrite(enA, LOW);
+  motorActivo = false;
 
   // Salidas and
   digitalWrite(logic1, HIGH);
@@ -55,10 +61,8 @@ void setup() {
 
   // Configura Timer1 para reproducir audio a 8-bit Fast PWM
   TCCR1A = _BV(COM1A1) | _BV(WGM10);
-  TCCR1B = _BV(WGM12) | _BV(CS10);  // Sin prescaler (máxima velocidad)
-  OCR1A = 128; // Nivel medio (silencio)
-  
-
+  TCCR1B = _BV(WGM12) | _BV(CS10);
+  OCR1A = 128;
 }
 
 void loop() {
@@ -67,38 +71,51 @@ void loop() {
   
   estado = digitalRead(input);
 
+
   switch (estado) {
 
     case LOW: // La lectura es cero, motor apagado
-      analogWrite(enA, 0); // Motor apagado
+      digitalWrite(in1, LOW);
+      digitalWrite(in2, LOW);
+      
+      TCCR2A = 0;  // ← Detener Timer2
+      TCCR2B = 0;
+      digitalWrite(enA, LOW);
+
       OCR1A = 128; // Silencio en el altavoz
       ultimoSample = ahora; // Reiniciar temporizador de audio
       sampleIndex = 0; // Reiniciar índice de muestra
+      motorActivo = false; // Marcar motor como inactivo
       break;
 
-    case HIGH:
+case HIGH:
+      // configurando pin3
+      if (!motorActivo) {
+        digitalWrite(in2, HIGH); 
+        digitalWrite(in1, LOW);
+        
+        // Fast PWM 8-bit, COM2B1 para pin 3, prescaler 8
+        TCCR2A = _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);  // COM2B1
+        TCCR2B = _BV(CS21);  // Prescaler 8
+        OCR2B = 50;  // ← PWM inicial (usar OCR2B directo, NO analogWrite)
+        
+        motorActivo = true;
+      }
+      
+      int pwmMotor = 50 + ((long)sampleIndex * (255 - 50)) / sounddata_length;
+      OCR2B = pwmMotor;  // OCR2B directo para pin 3
 
-      // Motor a velocidad fija 50
-      analogWrite(enA, 50);
-
-      // si ha pasado el tiempo para la siguiente muestra, reproducir, sino esperar
       if (ahora - ultimoSample >= samplePeriod) {
+        ultimoSample = ahora;
 
-        ultimoSample += samplePeriod;
-
-        // Leer muestra desde PROGMEM
         int8_t sample = pgm_read_byte(&sounddata_data[sampleIndex]);
-
-        OCR1A = sample;  // enviar al PWM (pin 9)
+        OCR1A = sample;
 
         sampleIndex++;
-
-        // Si terminó la muestra
         if (sampleIndex >= sounddata_length) {
-          sampleIndex = 0; // Reiniciar índice para repetir
+          sampleIndex = 0;
         }
       }
-
       break;
   }
 }
